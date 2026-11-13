@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "geonode-catalogue-iso19115-3"
+dynamic = ["version"]
+description = "Django app that overrides the GeoNode CSW catalogue to support the ISO 19115-3 (2018) metadata format"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "nds-cprm" }]
+keywords = ["geonode", "django", "csw", "pycsw", "metadata", "iso19115-3", "iso19139"]
+classifiers = [
+  "Framework :: Django",
+  "Framework :: Django :: 5.2",
+  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering :: GIS",
+]
+# GeoNode (5.0.x) is not declared as a dependency on purpose: it is usually installed
+# from git, and declaring it would make pip try to replace that install. lxml, OWSLib,
+# pycsw (geonode-pycsw) and shapely come with GeoNode.
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/nds-cprm/geonode-catalogue-iso19115-3"
+
+[tool.setuptools.dynamic]
+version = { attr = "geonode_catalogue_iso19115_3.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["geonode_catalogue_iso19115_3*"]
+
+[tool.setuptools.package-data]
+geonode_catalogue_iso19115_3 = [
+  "templates/**/*.xml",
+  "schemas/**/*.xsd",
+  "schemas/**/*.md",
+  "tests/templates/**/*.xml",
+]
+

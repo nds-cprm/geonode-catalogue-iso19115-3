@@ -1,0 +1,14 @@
+{% extends "geonode_catalogue_iso19115_3/full_metadata_iso19139.xml" %}
+{% block spatial_resolution %}
+       <gmd:spatialResolution>
+         <gmd:MD_Resolution>
+           <gmd:equivalentScale>
+             <gmd:MD_RepresentativeFraction>
+               <gmd:denominator>
+                 <gco:Integer>250000</gco:Integer>
+               </gmd:denominator>
+             </gmd:MD_RepresentativeFraction>
+           </gmd:equivalentScale>
+         </gmd:MD_Resolution>
+       </gmd:spatialResolution>
+{% endblock %}
