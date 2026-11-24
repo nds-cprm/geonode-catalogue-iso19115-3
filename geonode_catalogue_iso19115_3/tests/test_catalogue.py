@@ -35,6 +35,8 @@ from geonode_catalogue_iso19115_3.tests.fixtures import FICTITIOUS, create_ficti
 CATALOGUE_SETTINGS = {"default": {**settings.CATALOGUE["default"], "ENGINE": ENGINE}}
 COMPLETE_FILTER = "geonode_catalogue_iso19115_3.filters.published_datasets_with_complete_metadata"
 
+ISO19115_CODELISTS = "http://standards.iso.org/iso/19115/resources/Codelists/cat/codelists.xml"
+
 MDB = METADATA_FORMATS[ISO19115_3][1]
 GMD = METADATA_FORMATS[ISO19139][1]
 
@@ -235,6 +237,14 @@ class FictitiousDatasetTest(TestCase):
         # set_missing_info creates the mandatory contacts from the owner
         self.assertTrue(dataset.contactrole_set.exists())
         self.assertTrue(resource.link_set.filter(link_type="metadata", name=ISO19115_3).exists())
+
+    def test_iso19115_3_codelist_catalogue(self):
+        """Every ISO 19115 codelist points to the official catalogue (``.../Codelists/cat/codelists.xml``)."""
+        with format_settings(ISO19115_3):
+            dataset = create_fictitious_dataset()
+        code_lists = stored_root(dataset).xpath("//@codeList[contains(., '/iso/19115/')]")
+        self.assertTrue(code_lists)
+        self.assertEqual({c.split("#")[0] for c in code_lists}, {ISO19115_CODELISTS})
 
     def test_iso19115_3_content(self):
         # thesaurus labels are written in the active language of whoever saves the resource
