@@ -5,6 +5,7 @@ from unittest import mock
 from django.contrib.auth import get_user_model
 from django.contrib.gis.geos import Polygon
 
+from geonode.base.models import ResourceBase
 from geonode.catalogue.models import catalogue_post_save
 from geonode.layers.models import Dataset
 
@@ -129,6 +130,10 @@ def create_fictitious_dataset(name="geological_map_example", subtype="vector", a
                 is_published=approved,
             ),
         )
+
+    # with RESOURCE_PUBLISHING or ADMIN_MODERATE_UPLOADS, the resource manager resets
+    # is_approved/is_published on creation; the test needs the requested state
+    ResourceBase.objects.filter(pk=dataset.pk).update(is_approved=approved, is_published=approved)
 
     dataset.keywords.add(*FICTITIOUS["keywords"])
     dataset.tkeywords.add(tkeyword)

@@ -14,7 +14,9 @@ Differences from GeoNode:
 - the filter clauses are joined with ``AND`` only. In GeoNode an authenticated
   user gets ``(...) OR (id IN ...)``, so the ``ALTERNATES_ONLY`` and
   ``GROUP_PRIVATE_RESOURCES`` filters added afterwards no longer apply to them;
-- the authorized set goes through the configured dataset filter
+- the authorized set goes through ``PYCSW["FILTER"]`` (``filters.pycsw_filter``),
+  which GeoNode applies only to ``GetRecords``, so it holds for every operation;
+- the authorized set then goes through the configured dataset filter
   (``filters.get_dataset_filter``).
 
 When upgrading GeoNode, compare with ``geonode/catalogue/views.py``.
@@ -36,7 +38,7 @@ from geonode.groups.models import GroupProfile
 
 from .config import build_pycsw_config
 from .constants import ENGINE
-from .filters import get_dataset_filter
+from .filters import get_dataset_filter, pycsw_filter
 
 LOCAL_ENGINES = (ENGINE, "geonode.catalogue.backends.pycsw_local")
 
@@ -45,12 +47,12 @@ _FROM_SETTINGS = object()
 
 
 def _authorized_ids(request, dataset_filter):
-    """IDs of the resources the user can see, after ``dataset_filter``."""
+    """IDs of the resources the user can see, after ``PYCSW["FILTER"]`` and ``dataset_filter``."""
     username = str(request.user) if request.user else "AnonymousUser"
     profile = get_user_model().objects.filter(username=username).first()
     if profile is None:
         return []
-    resources = get_objects_for_user(profile, "base.view_resourcebase")
+    resources = get_objects_for_user(profile, "base.view_resourcebase").filter(**pycsw_filter())
     if dataset_filter:
         resources = dataset_filter(resources)
     return list(resources.values_list("id", flat=True))
