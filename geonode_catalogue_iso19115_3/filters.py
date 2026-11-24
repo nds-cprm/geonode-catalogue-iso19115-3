@@ -6,7 +6,7 @@ steps, and injects the resulting IDs into the pycsw filter, so both steps hold
 for every operation (GetRecords, GetRecordById, GetDomain) and every user:
 
 1. ``settings.PYCSW["FILTER"]`` (see ``pycsw_filter``), the GeoNode setting,
-   with the GeoNode default (datasets only);
+   by default approved and published datasets;
 2. ``settings.CATALOGUE_CSW_DATASET_FILTER``, for what a dictionary cannot
    express: a callable that receives the queryset and returns a narrower one,
    given as a dotted path, a callable, or ``None`` (the default: no extra filter).
@@ -27,6 +27,9 @@ from geonode.base.models import ResourceBase
 # default of PYCSW["FILTER"] in geonode/catalogue/backends/pycsw_plugin.py (GeoNode 5.0.x)
 CORE_PYCSW_FILTER = {"resource_type__in": ["dataset"]}
 
+# default of the app: GeoNode's, delivering only approved and published resources
+DEFAULT_PYCSW_FILTER = {**CORE_PYCSW_FILTER, "is_approved": True, "is_published": True}
+
 
 def pycsw_filter():
     """
@@ -35,9 +38,15 @@ def pycsw_filter():
     GeoNode applies it only in ``GeoNodeRepository.query()`` (``GetRecords``),
     with the default ``CORE_PYCSW_FILTER``. The CSW view of the app applies it
     to the authorized set too, so it also holds for ``GetRecordById`` and
-    ``GetDomain``. ``{}`` delivers every resource type.
+    ``GetDomain``, with the default ``DEFAULT_PYCSW_FILTER`` (approved and
+    published datasets). Since the view narrows the set of every operation,
+    ``GetRecords`` follows the default of the app too.
+
+    A ``PYCSW["FILTER"]`` in the settings replaces the default as a whole, so it
+    must repeat ``is_approved``/``is_published`` to keep them. ``{}`` delivers
+    every resource the user can view.
     """
-    return settings.PYCSW.get("FILTER", CORE_PYCSW_FILTER)
+    return settings.PYCSW.get("FILTER", DEFAULT_PYCSW_FILTER)
 
 
 def get_dataset_filter():
