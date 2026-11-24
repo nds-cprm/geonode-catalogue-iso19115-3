@@ -10,8 +10,15 @@ from lxml import etree
 
 from geonode.base.models import ResourceBase
 from geonode.catalogue import get_catalogue
-from geonode.catalogue.models import catalogue_post_save, update_csw_metadata
+from geonode.catalogue.models import catalogue_post_save
 from geonode.layers.models import Dataset
+
+try:
+    # GeoNode 5.0.x after 5.0.3: the metadata editor saves the resource and calls update_csw_metadata()
+    from geonode.catalogue.models import update_csw_metadata
+except ImportError:
+    # GeoNode 5.0.3: the metadata editor only saves the resource, and the XML is not regenerated
+    update_csw_metadata = None
 
 from geonode_catalogue_iso19115_3 import views
 from geonode_catalogue_iso19115_3.config import build_pycsw_config
@@ -155,13 +162,14 @@ class FormatTest(CatalogueTestBase):
             self.assertEqual(format_of_xml(stored(dataset)["metadata_xml"]), ISO19139)
             self.assertIsNotNone(get_catalogue().get_record(dataset.uuid))
 
-        # metadata editor path: save() + update_csw_metadata(), without catalogue_post_save
+        # metadata editor path: save() (+ update_csw_metadata() after GeoNode 5.0.3), without catalogue_post_save
         with format_settings(ISO19115_3):
             resource = ResourceBase.objects.get(pk=dataset.pk)
             resource.save()
-            update_csw_metadata(resource)
             self.assertEqual(stored(dataset)["csw_typename"], "mdb:MD_Metadata")
-            self.assertEqual(format_of_xml(stored(dataset)["metadata_xml"]), ISO19115_3)
+            if update_csw_metadata is not None:
+                update_csw_metadata(resource)
+                self.assertEqual(format_of_xml(stored(dataset)["metadata_xml"]), ISO19115_3)
 
     def test_minimal_iso19115_3_is_valid(self):
         """A resource without contacts still gets the mandatory mdb:contact (its owner)."""
