@@ -1,5 +1,5 @@
 """
-The ``/catalogue/csw`` endpoint.
+The ``/catalogue/csw`` endpoint, and ``/showmetadata/xsl/<id>`` (see ``metadata_xsl``).
 
 Own version of ``geonode.catalogue.views.csw_global_dispatch`` (GeoNode 5.0.x).
 Wrapping the core view is not enough, because it redirects whenever
@@ -25,6 +25,7 @@ import os
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.http import HttpResponse, HttpResponseRedirect
+from django.urls import NoReverseMatch, reverse
 from django.views.decorators.csrf import csrf_exempt
 from guardian.shortcuts import get_objects_for_user
 from pycsw import server
@@ -137,3 +138,31 @@ def csw_global_dispatch(request, dataset_filter=_FROM_SETTINGS):
         content = content[1]
 
     return HttpResponse(content, content_type=csw.contenttype)
+
+
+def metadata_xsl(request, id):
+    """
+    The ``/showmetadata/xsl/<id>`` endpoint, behind GeoNode's "ISO with XSL" metadata link.
+
+    GeoNode (``geonode.catalogue.metadataxsl``) serves the XML generated with
+    ``CATALOG_METADATA_TEMPLATE`` with an ``<?xml-stylesheet?>`` line pointing to
+    its ``metadata.xsl``, which the browser applies. That stylesheet only reads
+    ISO 19139 (``gmd:MD_Metadata``), so with ISO 19115-3 the page comes out empty.
+
+    When the format is ISO 19115-3, this view redirects (302) to the route named by
+    ``CATALOGUE_XSL_REDIRECT`` (default ``"metadata"``, the metadata page of
+    geonode-mapstore-client), reversed with ``pk``. Otherwise, when the setting is
+    ``None`` or the route does not exist, it falls back to the GeoNode view.
+    """
+    from .formats import ISO19115_3, default_format
+
+    route = getattr(settings, "CATALOGUE_XSL_REDIRECT", "metadata")
+    if route and default_format() == ISO19115_3:
+        try:
+            return HttpResponseRedirect(reverse(route, kwargs={"pk": id}))
+        except NoReverseMatch:
+            pass
+
+    from geonode.catalogue.metadataxsl import views as metadataxsl_views
+
+    return metadataxsl_views.prefix_xsl_line(request, id)
