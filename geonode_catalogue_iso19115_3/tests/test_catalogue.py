@@ -1,5 +1,6 @@
 import copy
 import os
+from unittest import mock
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -341,3 +342,36 @@ class GetDomainTest(CatalogueTestBase):
             repo.query_domain("title", None, "list", count=True), [("Title ds_rng_a", 1), ("Title ds_rng_b", 1)]
         )
         self.assertEqual(repo.query_domain("title", None, "list"), [("Title ds_rng_a",), ("Title ds_rng_b",)])
+
+
+class MetadataXslTest(TestCase):
+    """``/showmetadata/xsl/<id>``: redirect with ISO 19115-3, GeoNode view otherwise."""
+
+    def get(self, **settings_kwargs):
+        request = RequestFactory().get("/showmetadata/xsl/7")
+        request.user = get_user_model().objects.filter(is_superuser=True).first()
+        with mock.patch("geonode.catalogue.metadataxsl.views.prefix_xsl_line", return_value="core") as core:
+            with override_settings(**settings_kwargs):
+                return views.metadata_xsl(request, "7"), core
+
+    def test_redirects_to_metadata_page_with_iso19115_3(self):
+        response, core = self.get(CATALOGUE_DEFAULT_FORMAT=ISO19115_3)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "/metadata/7")
+        core.assert_not_called()
+
+    def test_configured_route(self):
+        response, _core = self.get(CATALOGUE_DEFAULT_FORMAT=ISO19115_3, CATALOGUE_XSL_REDIRECT="metadata_embed")
+        self.assertEqual(response["Location"], "/metadata/7/embed")
+
+    def test_falls_back_to_geonode_view(self):
+        cases = {
+            "ISO 19139": {"CATALOGUE_DEFAULT_FORMAT": ISO19139},
+            "redirect disabled": {"CATALOGUE_DEFAULT_FORMAT": ISO19115_3, "CATALOGUE_XSL_REDIRECT": None},
+            "missing route": {"CATALOGUE_DEFAULT_FORMAT": ISO19115_3, "CATALOGUE_XSL_REDIRECT": "no_such_route"},
+        }
+        for label, settings_kwargs in cases.items():
+            with self.subTest(label):
+                response, core = self.get(**settings_kwargs)
+                self.assertEqual(response, "core")
+                core.assert_called_once()

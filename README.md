@@ -6,6 +6,7 @@ GeoNode 5.0.x writes and serves metadata only as ISO 19139 (`gmd`), and has no e
 
 - a configurable metadata format for the XML stored in each resource (`ISO19115-3_2018` or `ISO`, that is ISO 19139);
 - a catalogue backend and a `/catalogue/csw` view that serve both formats through pycsw;
+- a redirect of GeoNode's "ISO with XSL" metadata link, whose stylesheet only reads ISO 19139;
 - validation of the generated XML against the official XSD, with an offline copy of the schemas;
 - fixes for several problems of the GeoNode 5.0.x catalogue (see [Differences from GeoNode](#differences-from-geonode)).
 
@@ -47,7 +48,7 @@ PYCSW["CONFIGURATION"]["server"]["domainquerytype"] = "list"
 
 ### URLs
 
-The app has its own `/catalogue/csw` view, which must come before GeoNode's. In the project `urls.py`:
+The app has its own `/catalogue/csw` and `/showmetadata/xsl/<id>` views, which must come before GeoNode's. In the project `urls.py`:
 
 ```python
 from geonode.urls import urlpatterns
@@ -74,6 +75,7 @@ python manage.py validate_metadata_xml
 | `CATALOG_METADATA_TEMPLATE` | GeoNode's ISO 19139 template | Template that generates the XML. Use the template of the chosen format (`METADATA_TEMPLATES[...]`) or one that extends it. |
 | `CATALOGUE_CSW_DATASET_FILTER` | `None` | Extra filter for the set delivered by the CSW: a dotted path or a callable. See [CSW filters](#csw-filters). |
 | `CSW_MIN_METADATA_COMPLETENESS` | `60` | Minimum metadata completeness (%) used by the `published_datasets_with_complete_metadata` filter. |
+| `CATALOGUE_XSL_REDIRECT` | `"metadata"` | Route the "ISO with XSL" link redirects to when the format is ISO 19115-3, reversed with `pk`. `None` keeps the GeoNode view. See ["ISO with XSL" link](#iso-with-xsl-link). |
 | `CATALOGUE_METADATA_SCHEMAS_DIR` | the package `schemas/` directory | Directory with the XSD files used for validation. |
 | `PYCSW["CONFIGURATION"]` | GeoNode's | Merged in depth over GeoNode's `pycsw_local` defaults; the settings win. The `apiso`, `ebrim` and `iso19115p3` profiles are always enabled. |
 
@@ -100,6 +102,17 @@ What the CSW returns, by `outputschema`:
 /catalogue/csw?service=CSW&version=2.0.2&request=GetRecordById&id=<uuid>&elementsetname=full&outputschema=http://standards.iso.org/iso/19115/-3/mdb/2.0
 /catalogue/csw?service=CSW&version=2.0.2&request=GetDomain&propertyname=dc:title
 ```
+
+## "ISO with XSL" link
+
+GeoNode (`geonode.catalogue.metadataxsl`) adds to every dataset and document a metadata link named "ISO with XSL", at `/showmetadata/xsl/<id>`. That view generates the XML with `CATALOG_METADATA_TEMPLATE` and adds an `<?xml-stylesheet?>` line pointing to `/static/metadataxsl/metadata.xsl`, which the browser applies. The stylesheet only reads ISO 19139 (`gmd:MD_Metadata`), so with ISO 19115-3 the page comes out empty. Browsers are also removing XSLT support (Chrome from November 2026).
+
+The app replaces that route, keeping its name (`prefix_xsl_line`), so the links GeoNode creates keep the same address:
+
+- with `CATALOGUE_DEFAULT_FORMAT = "ISO19115-3_2018"`, it redirects (302) to the route named by `CATALOGUE_XSL_REDIRECT`, reversed with `pk`. The default, `metadata`, is the metadata page of geonode-mapstore-client (`/metadata/<pk>`);
+- with ISO 19139, with `CATALOGUE_XSL_REDIRECT = None`, or when the route does not exist, it calls the GeoNode view.
+
+The metadata page of geonode-mapstore-client 5.0.x does not check the permission to view the resource. The redirect does not expose anything new, because the page can be opened directly, but a project can point `CATALOGUE_XSL_REDIRECT` to a page of its own, or override the `metadata` route.
 
 ## CSW filters
 
@@ -193,6 +206,7 @@ Parts of the app are adapted copies of GeoNode code. Compare each one with the o
 | `backends/pycsw_local.py` (`get_record`, `search_records`, `_csw_local_dispatch`) | `geonode/catalogue/backends/pycsw_local.py` |
 | `backends/pycsw_repository.py` (`query_domain`) | `geonode/catalogue/backends/pycsw_plugin.py` |
 | `views.py` (`csw_global_dispatch`) | `geonode/catalogue/views.py` |
+| `views.py` (`metadata_xsl`) and `urls.py` | `geonode/catalogue/metadataxsl/` (view `prefix_xsl_line`, route in `geonode/urls.py`) |
 | `filters.py` (`with_metadata_completeness`) | `ResourceBase.metadata_completeness` in `geonode/base/models.py` |
 | `templates/geonode_catalogue_iso19115_3/full_metadata_iso19139.xml` | `geonode/catalogue/templates/catalogue/full_metadata.xml` |
 
