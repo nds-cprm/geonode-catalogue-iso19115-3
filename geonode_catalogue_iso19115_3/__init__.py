@@ -10,4 +10,4 @@ The app overrides parts of ``geonode.catalogue`` without changing GeoNode itself
 - XSD validation of the generated XML, see ``validation``.
 """
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
