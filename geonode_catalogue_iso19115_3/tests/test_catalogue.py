@@ -1,9 +1,11 @@
 import copy
 import os
+from io import StringIO
 from unittest import mock
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.test import RequestFactory, TestCase, override_settings
 from django.utils import translation
 from lxml import etree
@@ -12,6 +14,7 @@ from geonode.base.models import ResourceBase
 from geonode.catalogue import get_catalogue
 from geonode.catalogue.models import catalogue_post_save
 from geonode.layers.models import Dataset
+from geonode.maps.models import Map
 
 try:
     # GeoNode 5.0.x after 5.0.3: the metadata editor saves the resource and calls update_csw_metadata()
@@ -383,3 +386,57 @@ class MetadataXslTest(TestCase):
                 response, core = self.get(**settings_kwargs)
                 self.assertEqual(response, "core")
                 core.assert_called_once()
+
+
+class RegenerateMetadataXmlTest(CatalogueTestBase):
+    """``regenerate_metadata_xml``: every resource type, not only datasets as GeoNode's ``regenerate_xml``."""
+
+    def setUp(self):
+        super().setUp()
+        self.dataset = self.minimal_dataset("ds_regen")
+        self.map = Map.objects.create(
+            owner=self.owner,
+            title="Map regen",
+            abstract="Abstract",
+            bbox_polygon="SRID=4326;POLYGON((-50 -20,-50 -10,-40 -10,-40 -20,-50 -20))",
+            srid="EPSG:4326",
+        )
+        with format_settings(ISO19139):
+            for resource in (self.dataset, self.map):
+                catalogue_post_save(instance=resource, sender=resource.__class__)
+
+    def run_command(self, *args):
+        out = StringIO()
+        with format_settings(ISO19115_3):
+            call_command("regenerate_metadata_xml", *args, stdout=out)
+        return out.getvalue()
+
+    def formats(self):
+        return {r: format_of_xml(stored(r)["metadata_xml"]) for r in (self.dataset, self.map)}
+
+    def test_regenerates_every_type(self):
+        self.assertEqual(self.formats(), {self.dataset: ISO19139, self.map: ISO19139})
+        self.run_command()
+        self.assertEqual(self.formats(), {self.dataset: ISO19115_3, self.map: ISO19115_3})
+        self.assertEqual(stored(self.map)["csw_typename"], "mdb:MD_Metadata")
+        errors = validate_xml(stored(self.map)["metadata_xml"], ISO19115_3)
+        self.assertEqual(errors, [], "\n".join(errors))
+
+    def test_type_filter(self):
+        # Map.objects.create() leaves resource_type empty: the filter falls back to polymorphic_ctype
+        self.assertFalse(ResourceBase.objects.get(pk=self.map.pk).resource_type)
+        self.run_command("--type", "map")
+        self.assertEqual(self.formats(), {self.dataset: ISO19139, self.map: ISO19115_3})
+
+    def test_dry_run_changes_nothing(self):
+        output = self.run_command("--dry-run")
+        self.assertIn(f"would regenerate [{self.map.id}]", output)
+        self.assertEqual(self.formats(), {self.dataset: ISO19139, self.map: ISO19139})
+
+    def test_outdated_skips_resources_in_the_default_format(self):
+        with format_settings(ISO19115_3):
+            catalogue_post_save(instance=self.dataset, sender=Dataset)
+        target = "geonode_catalogue_iso19115_3.management.commands.regenerate_metadata_xml.catalogue_post_save"
+        with mock.patch(target) as regenerate:
+            self.run_command("--outdated", "--id", str(self.dataset.id), "--id", str(self.map.id))
+        self.assertEqual([c.kwargs["instance"].id for c in regenerate.call_args_list], [self.map.id])

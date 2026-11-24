@@ -62,9 +62,12 @@ urlpatterns[0:0] = catalogue_urlpatterns
 Records keep the format they were generated in. After installing the app or changing `CATALOGUE_DEFAULT_FORMAT`, regenerate them:
 
 ```bash
-python manage.py regenerate_xml
+python manage.py regenerate_metadata_xml --outdated --dry-run   # lists what will change
+python manage.py regenerate_metadata_xml --outdated
 python manage.py validate_metadata_xml
 ```
+
+Use `regenerate_metadata_xml`, not GeoNode's `regenerate_xml`: in GeoNode 5.0.x `regenerate_xml` only goes through datasets, so maps, documents and GeoApps would keep the old format.
 
 ## Settings reference
 
@@ -83,7 +86,7 @@ python manage.py validate_metadata_xml
 
 GeoNode generates the XML and stores it in the `metadata_xml` field of the resource; pycsw reads that field to answer the CSW.
 
-1. When a dataset or document is saved, GeoNode calls `catalogue_post_save`. The same happens in `regenerate_xml`, in `set_all_datasets_metadata` and when GeoServer updates the resource links.
+1. When a dataset or document is saved, GeoNode calls `catalogue_post_save`. The same happens when the resource manager creates or updates a resource (maps and GeoApps included), in `regenerate_xml` and `set_all_datasets_metadata` (datasets only), in `regenerate_metadata_xml` (every type) and when GeoServer updates the resource links. In GeoNode 5.0.3 the metadata editor saves the `ResourceBase` without going through `catalogue_post_save`, so it does not regenerate the XML (the `5.0.x` branch calls `update_csw_metadata` after saving).
 2. The backend of the app writes `csw_typename` and `csw_schema` according to the format: `mdb:MD_Metadata` for ISO 19115-3, `gmd:MD_Metadata` for ISO 19139. The metadata editor saves the resource without that path, so a `pre_save` receiver does the same.
 3. The XML is rendered with `CATALOG_METADATA_TEMPLATE` and stored in `metadata_xml`. XML uploaded by a user with the "preserve" option is kept as is, and `csw_typename` follows the format of that XML.
 4. GeoNode creates one metadata link per format offered by the catalogue, ISO 19115-3 included.
@@ -180,7 +183,8 @@ Validation checks the structure (element order, mandatory elements, types and at
 
 | Command | Purpose |
 |---|---|
-| `regenerate_xml [-i ID] [-l NAME] [-d]` | GeoNode command. Regenerates the XML and the metadata links; without filters, of every resource. |
+| `regenerate_metadata_xml [--type TYPE] [--id ID] [--outdated] [--dry-run]` | Regenerates the XML, `csw_typename`/`csw_schema` and the metadata links of resources of every type (`catalogue_post_save`). `--type` filters by `resource_type` (`dataset`, `document`, `map`, `dashboard`, `geostory`...; when it is empty, by the model of `polymorphic_ctype`), `--outdated` skips resources whose XML is already in the default format and the uploaded XML kept with "preserve". Both options can be repeated. Exits with status 1 when any resource fails. |
+| `regenerate_xml [-i ID] [-l NAME] [-d]` | GeoNode command. Regenerates the XML, the metadata links and missing UUIDs of **datasets only** (GeoNode 5.0.x). |
 | `validate_metadata_xml [--id ID] [--max-errors N]` | Validates the stored `metadata_xml` of the resources and lists the errors of each one. Exits with status 1 when any XML is invalid. Resources in a format without XSD are counted as skipped. |
 | `fetch_metadata_schemas [--output DIR] [--cache DIR]` | Downloads the XSD files again. Without `--output`, into `CATALOGUE_METADATA_SCHEMAS_DIR` or the package `schemas/` directory. |
 
