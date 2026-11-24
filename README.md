@@ -76,7 +76,7 @@ Use `regenerate_metadata_xml`, not GeoNode's `regenerate_xml`: in GeoNode 5.0.x 
 | `CATALOGUE["default"]["ENGINE"]` | GeoNode's `pycsw_local` | Must be `geonode_catalogue_iso19115_3.backends.pycsw_local`. With another value the format and the fixes do not apply to the XML generation, and `manage.py check` warns. |
 | `CATALOGUE_DEFAULT_FORMAT` | `ISO19115-3_2018` | Format of the XML written to `metadata_xml` and returned by the catalogue: `ISO19115-3_2018` or `ISO` (ISO 19139). An invalid value stops Django from starting. |
 | `CATALOG_METADATA_TEMPLATE` | GeoNode's ISO 19139 template | Template that generates the XML. Use the template of the chosen format (`METADATA_TEMPLATES[...]`) or one that extends it. |
-| `PYCSW["FILTER"]` | `{"resource_type__in": ["dataset"], "is_approved": True, "is_published": True}` | GeoNode setting: keyword arguments of `ResourceBase.objects.filter()` for the set delivered by the CSW. GeoNode applies it only to `GetRecords`, with the default `{"resource_type__in": ["dataset"]}`; the app applies it to every operation, and its default also requires approval and publication. See [CSW filters](#csw-filters). |
+| `PYCSW["FILTER"]` | `{"resource_type__in": ["dataset"]}` | GeoNode setting: keyword arguments of `ResourceBase.objects.filter()` for the set delivered by the CSW. GeoNode applies it only to `GetRecords`; the app applies it to every operation. See [CSW filters](#csw-filters). |
 | `CATALOGUE_CSW_DATASET_FILTER` | `None` | Extra filter for the set delivered by the CSW, for what `PYCSW["FILTER"]` cannot express: a dotted path or a callable. See [CSW filters](#csw-filters). |
 | `CSW_MIN_METADATA_COMPLETENESS` | `60` | Minimum metadata completeness (%) used by the `published_datasets_with_complete_metadata` filter. |
 | `CATALOGUE_XSL_REDIRECT` | `"metadata"` | Route the "ISO with XSL" link redirects to when the format is ISO 19115-3, reversed with `pk`. `None` keeps the GeoNode view. See ["ISO with XSL" link](#iso-with-xsl-link). |
@@ -124,16 +124,14 @@ For every request, the view builds the pycsw filter from these clauses, always j
 
 - the record has a UUID;
 - the user can view the resource (for anonymous requests, the anonymous user permissions);
-- the resource passes `PYCSW["FILTER"]` (by default, approved and published datasets);
+- the resource passes `PYCSW["FILTER"]` (by default, datasets only, as in GeoNode);
 - the resource passes `CATALOGUE_CSW_DATASET_FILTER`, when set;
 - with `GROUP_PRIVATE_RESOURCES`, the resource does not belong to a private group the user is not a member of (not applied to superusers);
 - with `CATALOGUE["default"]["ALTERNATES_ONLY"]`, the resource has an `alternate`.
 
 The filter holds for every operation (`GetRecords`, `GetRecordById`, `GetDomain`) and does not affect the XML generation.
 
-`PYCSW["FILTER"]` is the GeoNode setting for the set delivered by the CSW: keyword arguments of `ResourceBase.objects.filter()`. GeoNode applies it only to `GetRecords`, so `GetRecordById` and `GetDomain` deliver resources that `GetRecords` hides. The app applies it to the authorized set as well, so a single filter holds for every operation.
-
-When the setting is not defined, the app uses `{"resource_type__in": ["dataset"], "is_approved": True, "is_published": True}` (`filters.DEFAULT_PYCSW_FILTER`): GeoNode's default, plus approval and publication. Since the view narrows the set of every operation, `GetRecords` follows this default too. A `PYCSW["FILTER"]` in the settings replaces the default as a whole, so it must repeat `is_approved` and `is_published` to keep them. For example, to deliver other resource types:
+`PYCSW["FILTER"]` is the GeoNode setting for the set delivered by the CSW: keyword arguments of `ResourceBase.objects.filter()`. GeoNode applies it only to `GetRecords`, so `GetRecordById` and `GetDomain` deliver resources that `GetRecords` hides. The app applies it to the authorized set as well, so a single filter holds for every operation. It is enough for resource types, approval and publication:
 
 ```python
 PYCSW["FILTER"] = {
@@ -143,7 +141,7 @@ PYCSW["FILTER"] = {
 }
 ```
 
-With `{}`, every resource the user can view is delivered, approved or not. The filter is not applied in the pycsw repository, because `catalogue_post_save` reads the record through it (`get_record`): resources outside the filter would no longer get their metadata links.
+With `{}`, every resource type is delivered. The filter is not applied in the pycsw repository, because `catalogue_post_save` reads the record through it (`get_record`): resources outside the filter would no longer get their metadata links.
 
 For what a dictionary cannot express, `CATALOGUE_CSW_DATASET_FILTER` is a callable that receives the queryset of resources the user can view, already narrowed by `PYCSW["FILTER"]`, and returns a narrower one. The app ships one, which delivers only approved and published datasets whose metadata completeness is above `CSW_MIN_METADATA_COMPLETENESS`:
 
@@ -212,7 +210,7 @@ Besides the configurable format, the app fixes these problems of the GeoNode 5.0
 |---|---|
 | The pycsw configuration is a shallow copy. The view changes the permission filter in a dictionary shared by the module, so with threaded workers a request can use the filter of another user. | The configuration is built again on every use, deep-merged. |
 | The `pycsw_local` defaults win over the settings, `profiles` included, so the `iso19115p3` profile cannot be enabled. | The settings win, and the `apiso`, `ebrim` and `iso19115p3` profiles are always on. |
-| `PYCSW["FILTER"]` (by default, datasets only) applies only to `GetRecords`: `GetRecordById` and `GetDomain` deliver every resource type. The CSW delivers resources that are not approved or published to whoever can view them. | `PYCSW["FILTER"]` holds for every operation, and by default the CSW delivers only approved and published datasets. |
+| `PYCSW["FILTER"]` (by default, datasets only) applies only to `GetRecords`: `GetRecordById` and `GetDomain` deliver every resource type. | `PYCSW["FILTER"]` holds for every operation. |
 | For authenticated users the filter becomes `(...) OR (id IN ...)`, so the group and `ALTERNATES_ONLY` filters added afterwards no longer apply to them. | Clauses joined with `AND` only, each in parentheses. |
 | The view redirects when `CATALOGUE_ENGINE` is not exactly GeoNode's `pycsw_local`. | The view accepts the backend of the app and GeoNode's. |
 | Every `GetDomain` comes back empty: django-polymorphic fails on the repository aggregates (`AttributeError: 'NoneType' object has no attribute 'name'`) and pycsw hides the error. | Own repository, which queries without django-polymorphic. |
@@ -228,7 +226,7 @@ Parts of the app are adapted copies of GeoNode code. Compare each one with the o
 | `backends/pycsw_repository.py` (`query_domain`) | `geonode/catalogue/backends/pycsw_plugin.py` |
 | `views.py` (`csw_global_dispatch`) | `geonode/catalogue/views.py` |
 | `views.py` (`metadata_xsl`) and `urls.py` | `geonode/catalogue/metadataxsl/` (view `prefix_xsl_line`, route in `geonode/urls.py`) |
-| `filters.py` (`CORE_PYCSW_FILTER`, GeoNode default of `PYCSW["FILTER"]`) | `geonode/catalogue/backends/pycsw_plugin.py` (`query`) |
+| `filters.py` (`CORE_PYCSW_FILTER`, default of `PYCSW["FILTER"]`) | `geonode/catalogue/backends/pycsw_plugin.py` (`query`) |
 | `filters.py` (`with_metadata_completeness`) | `ResourceBase.metadata_completeness` in `geonode/base/models.py` |
 | `templates/geonode_catalogue_iso19115_3/full_metadata_iso19139.xml` | `geonode/catalogue/templates/catalogue/full_metadata.xml` |
 

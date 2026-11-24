@@ -359,18 +359,6 @@ class CswFilterTest(CatalogueTestBase):
                 self.assertIn(resource.uuid, self._ids(csw(self.owner, **self.GET_RECORDS)))
                 self.assertEqual(self._record_by_id(self.owner, resource.uuid), [resource.uuid])
 
-    def test_default_pycsw_filter_requires_approval(self):
-        """Without PYCSW["FILTER"] in the settings, only approved and published datasets."""
-        with format_settings(ISO19115_3):
-            published = create_fictitious_dataset()
-            draft = create_fictitious_dataset(name="draft_example", approved=False)
-            with override_settings(PYCSW={k: v for k, v in settings.PYCSW.items() if k != "FILTER"}):
-                ids = self._ids(csw(self.owner, **self.GET_RECORDS))
-                self.assertIn(published.uuid, ids)
-                self.assertNotIn(draft.uuid, ids)
-                self.assertEqual(self._record_by_id(self.owner, draft.uuid), [])
-                self.assertEqual(self._record_by_id(self.owner, published.uuid), [published.uuid])
-
     def test_pycsw_filter_by_approval(self):
         """A dictionary is enough for approval and publication, in every operation."""
         with format_settings(ISO19115_3), pycsw_filter_settings(
