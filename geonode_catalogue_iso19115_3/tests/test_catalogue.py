@@ -26,6 +26,7 @@ except ImportError:
 from geonode_catalogue_iso19115_3 import views
 from geonode_catalogue_iso19115_3.config import build_pycsw_config
 from geonode_catalogue_iso19115_3.constants import ENGINE, ISO19115_3, ISO19139, METADATA_TEMPLATES
+from geonode_catalogue_iso19115_3.filters import CORE_PYCSW_FILTER
 from geonode_catalogue_iso19115_3.formats import METADATA_FORMATS, format_of_xml
 from geonode_catalogue_iso19115_3.validation import validate_xml
 
@@ -62,6 +63,19 @@ def format_settings(fmt, template=None):
         CATALOGUE_DEFAULT_FORMAT=fmt,
         CATALOG_METADATA_TEMPLATE=template or METADATA_TEMPLATES[fmt],
         CATALOGUE_CSW_DATASET_FILTER=None,
+        PYCSW={**settings.PYCSW, "FILTER": CORE_PYCSW_FILTER},
+    )
+
+
+def pycsw_filter_settings(pycsw_filter):
+    """PYCSW["FILTER"] for the CSW filter tests, with GetDomain listing values and counts."""
+    configuration = settings.PYCSW["CONFIGURATION"]
+    return override_settings(
+        PYCSW={
+            **settings.PYCSW,
+            "FILTER": pycsw_filter,
+            "CONFIGURATION": {**configuration, "server": {**configuration["server"], "domainquerytype": "list"}},
+        }
     )
 
 
@@ -104,6 +118,7 @@ class CatalogueTestBase(TestCase):
             name=name,
             title=f"Title {name}",
             abstract="Abstract",
+            resource_type="dataset",  # set by the resource manager in the real flow
             subtype="vector",
             alternate=f"geonode:{name}",
             workspace="geonode",
@@ -283,7 +298,7 @@ class FictitiousDatasetTest(TestCase):
         self.assertIn("geology", [k.name for kw in record.identification[0].keywords for k in kw.keywords])
 
 
-class CswFilterTest(TestCase):
+class CswFilterTest(CatalogueTestBase):
     GET_RECORDS = dict(
         request="GetRecords",
         typenames="mdb:MD_Metadata",
@@ -313,6 +328,53 @@ class CswFilterTest(TestCase):
             ids = self._ids(csw(published.owner, **self.GET_RECORDS))
         self.assertIn(published.uuid, ids)
         self.assertNotIn(draft.uuid, ids)
+
+    def _record_by_id(self, user, uuid):
+        return self._ids(
+            csw(user, request="GetRecordById", id=uuid, elementsetname="full", outputschema=MDB)
+        )
+
+    def _map(self):
+        resource = Map.objects.create(
+            owner=self.owner,
+            title="Map csw",
+            abstract="Abstract",
+            resource_type="map",
+            bbox_polygon="SRID=4326;POLYGON((-50 -20,-50 -10,-40 -10,-40 -20,-50 -20))",
+            srid="EPSG:4326",
+        )
+        catalogue_post_save(instance=resource, sender=Map)
+        return resource
+
+    def test_pycsw_filter_holds_for_every_operation(self):
+        """With the GeoNode default, GetRecordById no longer delivers what GetRecords hides."""
+        with format_settings(ISO19115_3):
+            dataset = create_fictitious_dataset()
+            resource = self._map()
+            self.assertNotIn(resource.uuid, self._ids(csw(self.owner, **self.GET_RECORDS)))
+            self.assertEqual(self._record_by_id(self.owner, resource.uuid), [])
+            self.assertEqual(self._record_by_id(self.owner, dataset.uuid), [dataset.uuid])
+
+            with pycsw_filter_settings({"resource_type__in": ["dataset", "map"]}):
+                self.assertIn(resource.uuid, self._ids(csw(self.owner, **self.GET_RECORDS)))
+                self.assertEqual(self._record_by_id(self.owner, resource.uuid), [resource.uuid])
+
+    def test_pycsw_filter_by_approval(self):
+        """A dictionary is enough for approval and publication, in every operation."""
+        with format_settings(ISO19115_3), pycsw_filter_settings(
+            {"resource_type__in": ["dataset"], "is_approved": True, "is_published": True}
+        ):
+            published = create_fictitious_dataset()
+            draft = create_fictitious_dataset(name="draft_example", approved=False)
+            ids = self._ids(csw(self.owner, **self.GET_RECORDS))
+            self.assertIn(published.uuid, ids)
+            self.assertNotIn(draft.uuid, ids)
+            self.assertEqual(self._record_by_id(self.owner, draft.uuid), [])
+
+            response = csw(self.owner, request="GetDomain", propertyname="dc:title")
+        root = etree.fromstring(response.content)
+        values = [v.text for v in root.iter("{http://www.opengis.net/cat/csw/2.0.2}Value")]
+        self.assertEqual(values, [f"{published.title} (1)"])
 
     def test_clauses_are_anded(self):
         request = RequestFactory().get("/catalogue/csw")

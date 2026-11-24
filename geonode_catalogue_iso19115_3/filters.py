@@ -1,13 +1,15 @@
 """
 Filters for the set of resources delivered by the CSW endpoint.
 
-A filter is a callable that receives the queryset of resources the user is
-allowed to see and returns a narrower queryset. The view applies it to the list
-of authorized IDs it injects into the pycsw filter, so it holds for every
-operation (GetRecords, GetRecordById, GetDomain) and every user.
+The view narrows the queryset of resources the user is allowed to see in two
+steps, and injects the resulting IDs into the pycsw filter, so both steps hold
+for every operation (GetRecords, GetRecordById, GetDomain) and every user:
 
-The filter is chosen with ``settings.CATALOGUE_CSW_DATASET_FILTER``: a dotted
-path, a callable, or ``None`` (the default: no extra filter, like GeoNode).
+1. ``settings.PYCSW["FILTER"]`` (see ``pycsw_filter``), the GeoNode setting,
+   with the GeoNode default (datasets only);
+2. ``settings.CATALOGUE_CSW_DATASET_FILTER``, for what a dictionary cannot
+   express: a callable that receives the queryset and returns a narrower one,
+   given as a dotted path, a callable, or ``None`` (the default: no extra filter).
 
 The pycsw repository filter (``PYCSW["CONFIGURATION"]["repository"]["filter"]``)
 is not used for this because it also applies to the internal calls of
@@ -20,6 +22,22 @@ from django.db.models import Case, Exists, ExpressionWrapper, F, IntegerField, O
 from django.utils.module_loading import import_string
 
 from geonode.base.models import ResourceBase
+
+
+# default of PYCSW["FILTER"] in geonode/catalogue/backends/pycsw_plugin.py (GeoNode 5.0.x)
+CORE_PYCSW_FILTER = {"resource_type__in": ["dataset"]}
+
+
+def pycsw_filter():
+    """
+    ``settings.PYCSW["FILTER"]``: keyword arguments of ``ResourceBase.objects.filter()``.
+
+    GeoNode applies it only in ``GeoNodeRepository.query()`` (``GetRecords``),
+    with the default ``CORE_PYCSW_FILTER``. The CSW view of the app applies it
+    to the authorized set too, so it also holds for ``GetRecordById`` and
+    ``GetDomain``. ``{}`` delivers every resource type.
+    """
+    return settings.PYCSW.get("FILTER", CORE_PYCSW_FILTER)
 
 
 def get_dataset_filter():
